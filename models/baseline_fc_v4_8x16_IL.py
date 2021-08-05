@@ -67,22 +67,18 @@ class MomentsToImage(tf.keras.layers.Layer):
                 repeats=self.grid_dim
             )
         )
-        covmat = tf.clip_by_value(
-            tf.repeat(
-                    tf.expand_dims(
-                        tf.gather(ms, [[0,1],[1,2]], axis=1),
-                    axis=1), 
-                axis=1, 
-                repeats=self.grid_dim
-            ),
-            -1,
-            1
-        )
+        covmat = tf.repeat(
+            tf.expand_dims(
+                tf.gather(ms, [[0,1],[1,2]], axis=1),
+            axis=1), 
+            axis=1, 
+            repeats=self.grid_dim
+        ),
         covmat_inv = tf.linalg.inv(covmat + tf.eye(2)*1e-5)
         covmat_det = tf.linalg.det(covmat + tf.eye(2)*1e-5)
         norm = it / tf.math.sqrt(covmat_det*((2*math.pi)**2))
         dens = tf.squeeze(tf.math.exp((-1/2) * (tf.expand_dims((self.grid-mu),-2) @ covmat_inv @ tf.expand_dims((self.grid-mu),-1))))
-        return tf.reshape(norm*dens, (-1, self.output_dim[0], self.output_dim[1]))
+        return tf.reshape(norm*dens, (-1, self.output_dim[1], self.output_dim[0]))
 
 
 class ImageToMoments(tf.keras.layers.Layer):
@@ -90,22 +86,18 @@ class ImageToMoments(tf.keras.layers.Layer):
         super(ImageToMoments, self).__init__()
 
     def build(self, input_shape):
-        self.ix = tf.repeat(
-            tf.constant(range(input_shape[1]), dtype=tf.float32),
-            axis=0,
-            repeats=input_shape[2]
-        )
-        self.iy = tf.repeat(
-            tf.constant(range(input_shape[2]), dtype=tf.float32),
-            axis=0,
-            repeats=input_shape[1]
-        )
+        self.grid = [(i,j) for i in range(input_shape[1]) for j in range(input_shape[2])]
+        print(self.grid)
+        self.ix = tf.constant([[g[0] for g in self.grid] for i in range(input_shape[0])], dtype=tf.float32)
+        self.iy = tf.constant([[g[1] for g in self.grid] for i in range(input_shape[0])], dtype=tf.float32)
 
     def call(self, image):
         image_vec = tf.reshape(image, (-1, image.shape[1]*image.shape[2]))
         it = tf.reduce_sum(image_vec, -1)
+        it_t = tf.repeat(tf.expand_dims(it, axis=1), axis=1, repeats=image_vec.shape[-1])
+        image_vec = image_vec / it_t
         mean_x = tf.reduce_sum(self.ix*image_vec, 1)
-        mean_y = tf.reduce_sum(self.iy*image_vec, -1)
+        mean_y = tf.reduce_sum(self.iy*image_vec, 1)
         mean_ix = tf.repeat(tf.expand_dims(mean_x, axis=1), axis=1, repeats=self.ix.shape[-1])
         mean_iy = tf.repeat(tf.expand_dims(mean_y, axis=1), axis=1, repeats=self.iy.shape[-1])
         var_x = tf.reduce_sum(image_vec*((self.ix-mean_ix)**2), -1)
@@ -327,3 +319,16 @@ class BaselineModel_8x16_IL:
                 result = self.disc_step(feature_batch, target_batch)
                 self.step_counter.assign_add(1)
         return result
+
+if __name__ == '__main__':
+    # kinda tests
+    import matplotlib.pyplot as plt
+    inp = tf.constant([
+        [3, 5, 5, 0, 1, 100],
+        [2, 2, 1, 0, 1, 200]
+    ], dtype=tf.float32)
+    mti = MomentsToImage((16, 8))
+    itm = ImageToMoments()
+    print(itm(mti(inp)))
+    plt.imshow(mti(inp)[1].numpy())
+    plt.show()
