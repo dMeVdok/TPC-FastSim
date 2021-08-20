@@ -1,3 +1,4 @@
+from re import M
 import tensorflow as tf
 import math
 
@@ -46,6 +47,7 @@ class MomentsToImage(tf.keras.layers.Layer):
         self.grid = tf.constant([
             [x,y] for x in range(self.output_dim[1]) for y in range(self.output_dim[0])
         ], dtype=tf.float32)
+        super(MomentsToImage, self).build(input_shape)
 
     def call(self, moments):
         mu, ms, it = (
@@ -67,18 +69,27 @@ class MomentsToImage(tf.keras.layers.Layer):
                 repeats=self.grid_dim
             )
         )
-        covmat = tf.repeat(
-            tf.expand_dims(
-                tf.gather(ms, [[0,1],[1,2]], axis=1),
-            axis=1), 
-            axis=1, 
-            repeats=self.grid_dim
-        ),
+        mu = tf.clip_by_value(
+            mu,
+            clip_value_min=0,
+            clip_value_max=100
+        )
+        covmat = tf.clip_by_value(
+            tf.repeat(
+                tf.expand_dims(
+                    tf.gather(ms, [[0,1],[1,2]], axis=1),
+                axis=1), 
+                axis=1, 
+                repeats=self.grid_dim
+            ),
+            clip_value_min=-10,
+            clip_value_max=10
+        )
         covmat_inv = tf.linalg.inv(covmat + tf.eye(2)*1e-5)
         covmat_det = tf.linalg.det(covmat + tf.eye(2)*1e-5)
         norm = it / tf.math.sqrt(covmat_det*((2*math.pi)**2))
         dens = tf.squeeze(tf.math.exp((-1/2) * (tf.expand_dims((self.grid-mu),-2) @ covmat_inv @ tf.expand_dims((self.grid-mu),-1))))
-        return tf.reshape(norm*dens, (-1, self.output_dim[1], self.output_dim[0]))
+        return tf.transpose(tf.reshape(norm*dens, (-1, self.output_dim[1], self.output_dim[0])), (0,2,1))
 
 
 class ImageToMoments(tf.keras.layers.Layer):
@@ -87,22 +98,22 @@ class ImageToMoments(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         self.grid = [(i,j) for i in range(input_shape[1]) for j in range(input_shape[2])]
-        print(self.grid)
-        self.ix = tf.constant([[g[0] for g in self.grid] for i in range(input_shape[0])], dtype=tf.float32)
-        self.iy = tf.constant([[g[1] for g in self.grid] for i in range(input_shape[0])], dtype=tf.float32)
+        super(ImageToMoments, self).build(input_shape)
 
     def call(self, image):
+        iy = tf.constant([[g[0] for g in self.grid]], dtype=tf.float32)
+        ix = tf.constant([[g[1] for g in self.grid]], dtype=tf.float32)
         image_vec = tf.reshape(image, (-1, image.shape[1]*image.shape[2]))
         it = tf.reduce_sum(image_vec, -1)
         it_t = tf.repeat(tf.expand_dims(it, axis=1), axis=1, repeats=image_vec.shape[-1])
         image_vec = image_vec / it_t
-        mean_x = tf.reduce_sum(self.ix*image_vec, 1)
-        mean_y = tf.reduce_sum(self.iy*image_vec, 1)
-        mean_ix = tf.repeat(tf.expand_dims(mean_x, axis=1), axis=1, repeats=self.ix.shape[-1])
-        mean_iy = tf.repeat(tf.expand_dims(mean_y, axis=1), axis=1, repeats=self.iy.shape[-1])
-        var_x = tf.reduce_sum(image_vec*((self.ix-mean_ix)**2), -1)
-        cov_xy = tf.reduce_sum(image_vec*((self.ix-mean_ix)*(self.iy-mean_iy)), -1)
-        var_y = tf.reduce_sum(image_vec*((self.iy-mean_iy)**2), -1)
+        mean_x = tf.reduce_sum(ix*image_vec, 1)
+        mean_y = tf.reduce_sum(iy*image_vec, 1)
+        mean_ix = tf.repeat(tf.expand_dims(mean_x, axis=1), axis=1, repeats=ix.shape[-1])
+        mean_iy = tf.repeat(tf.expand_dims(mean_y, axis=1), axis=1, repeats=iy.shape[-1])
+        var_x = tf.reduce_sum(image_vec*((ix-mean_ix)**2), -1)
+        cov_xy = tf.reduce_sum(image_vec*((ix-mean_ix)*(iy-mean_iy)), -1)
+        var_y = tf.reduce_sum(image_vec*((iy-mean_iy)**2), -1)
         out = tf.stack([
             mean_x,
             mean_y,
@@ -111,8 +122,7 @@ class ImageToMoments(tf.keras.layers.Layer):
             var_y,
             it
         ], axis=-1)
-        return out
-        
+        return out        
 
 
 def get_discriminator(activation, kernel_init, dropout_rate, num_features, num_additional_layers, cramer=False,
@@ -324,10 +334,10 @@ if __name__ == '__main__':
     # kinda tests
     import matplotlib.pyplot as plt
     inp = tf.constant([
-        [3, 5, 5, 0, 1, 100],
-        [2, 2, 1, 0, 1, 200]
+        [5, 5, 5, 0, 1, 100],
+        [3, 4, 1, 0, 1, 100]
     ], dtype=tf.float32)
-    mti = MomentsToImage((16, 8))
+    mti = MomentsToImage((8, 16))
     itm = ImageToMoments()
     print(itm(mti(inp)))
     plt.imshow(mti(inp)[1].numpy())

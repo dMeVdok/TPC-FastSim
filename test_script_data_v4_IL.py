@@ -128,14 +128,16 @@ def main():
     data, features = preprocessing.read_csv_2d(pad_range=pad_range, time_range=time_range)
     features = features.astype('float32')
 
-    data_scaled = np.log10(1 + data).astype('float32')
+    # data_scaled = np.log10(1 + data).astype('float32')
+    data_scaled = data.astype('float32')
     Y_train, Y_test, X_train, X_test = train_test_split(data_scaled, features, test_size=0.25, random_state=42)
 
     if not args.prediction_only:
         writer_train = tf.summary.create_file_writer(f'logs/{args.checkpoint_name}/train')
         writer_val = tf.summary.create_file_writer(f'logs/{args.checkpoint_name}/validation')
 
-    unscale = lambda x: 10 ** x - 1
+    #unscale = lambda x: 10 ** x - 1
+    unscale = lambda x: x
 
     def get_images(return_raw_data=False, calc_chi2=False, gen_more=None, sample=(X_test, Y_test), batch_size=128):
         X, Y = sample
@@ -172,7 +174,8 @@ def main():
 
         images1 = make_metric_plots(real, gen1, features=features)
 
-        img_amplitude = make_histograms(Y_test.flatten(), gen_scaled.flatten(), 'log10(amplitude + 1)', logy=True)
+        #img_amplitude = make_histograms(Y_test.flatten(), gen_scaled.flatten(), 'log10(amplitude + 1)', logy=True)
+        img_amplitude = make_histograms(Y_test.flatten(), gen_scaled.flatten(), 'amplitude', logy=False)
 
         result = [images, images1, img_amplitude]
 
@@ -190,13 +193,18 @@ def main():
             images, images1, img_amplitude, chi2 = get_images(calc_chi2=True)
 
             with writer_val.as_default():
-                tf.summary.scalar("chi2", chi2, step)
+                
+                try:
+                    tf.summary.scalar("chi2", chi2, step)
+                except Exception:
+                    pass
 
                 for k, img in images.items():
                     tf.summary.image(k, img, step)
                 for k, img in images1.items():
                     tf.summary.image("{} (amp > 1)".format(k), img, step)
-                tf.summary.image("log10(amplitude + 1)", img_amplitude, step)
+                # tf.summary.image("log10(amplitude + 1)", img_amplitude, step)
+                tf.summary.image("amplitude", img_amplitude, step)
 
 
     def schedule_lr(step):
@@ -230,7 +238,8 @@ def main():
                 array_to_img(img).save(str(path / f"{k}.png"))
             for k, img in images1.items():
                 array_to_img(img).save(str(path / f"{k}_amp_gt_1.png"))
-            array_to_img(img_amplitude).save(str(path / "log10_amp_p_1.png"))
+            #array_to_img(img_amplitude).save(str(path / "log10_amp_p_1.png"))
+            array_to_img(img_amplitude).save(str(path / "amp_p_1.png"))
 
             if part == 'test':
                 with open(str(path / 'generated.dat'), 'w') as f:
@@ -258,9 +267,11 @@ def main():
 
         train(Y_train, Y_test, model.training_step, model.calculate_losses, args.num_epochs, args.batch_size,
               train_writer=writer_train, val_writer=writer_val,
-              callbacks=[write_hist_summary, save_model, schedule_lr],
+              callbacks=[save_model, schedule_lr],
               features_train=X_train, features_val=X_test, features_noise=features_noise)
 
 
 if __name__ == '__main__':
     main()
+
+#write_hist_summary, 

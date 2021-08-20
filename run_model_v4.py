@@ -23,7 +23,6 @@ def make_parser():
     parser.add_argument('--checkpoint_name', type=str, required=True)
     parser.add_argument('--gpu_num', type=str, required=False)
     parser.add_argument('--prediction_only', action='store_true', default=False)
-
     return parser
 
 
