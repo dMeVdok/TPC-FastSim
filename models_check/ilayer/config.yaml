@@ -9,8 +9,8 @@ gpdata_lambda: 0.
 cramer: False
 stochastic_stepping: True
 
-save_every: 100
-num_epochs: 1000
+save_every: 10
+num_epochs: 500
 #num_epochs: 10000
 
 feature_noise_power: NULL
@@ -19,7 +19,7 @@ feature_noise_decay: NULL
 data_version: 'data_v4'
 pad_range: [-3, 5]
 time_range: [-7, 9]
-scaler: 'gaussian'
+scaler: 'logarithmic'
 
 architecture:
     generator:

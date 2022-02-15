@@ -16,76 +16,28 @@ def get_activation(activation):
     return activation
 
 
-class MomentActivation(tf.keras.layers.Layer):
-    
-    def __init__(self, output_shape):
-        super(MomentActivation, self).__init__()
-        self.output_dim = output_shape
-
-    def get_config(self):
-        config = super().get_config().copy()
-        config.update({
-            'moments_to_image_dim': self.output_dim,
-        })
-        return config
-
-    def build(self, input_shape):
-        super(MomentActivation, self).build(input_shape)
-
-    def call(self, moments):
-        sx, sy = self.output_dim[1]-1, self.output_dim[0]-1
-        mu, ms, it = (
-            moments[:,:2],
-            moments[:,2:-1],
-            moments[:,-1],
-        )
-        ms = tf.stack([0.001 + 0.999*(1. + tf.tanh(ms[:,0])) / 2, tf.tanh(ms[:,1]), 0.001 + 0.999*(1. + tf.tanh(ms[:,2])) / 2], axis=1)
-        ms = tf.stack([(ms[:,0])*3*2, ms[:,1]*tf.sqrt(ms[:,0]*ms[:,2]*9*sx*sy), ms[:,2]*3*2], axis=1)
-        mu = tf.tanh(mu) * tf.constant([[sx/2, sy/2]], dtype=tf.float32) + tf.constant([[sx/2, sy/2]], dtype=tf.float32)
-        
-        it = tf.nn.relu(it)
-        return tf.stack(
-            [
-                mu[:, 0],
-                mu[:, 1],
-                ms[:, 0],
-                ms[:, 1],
-                ms[:, 2],
-                it
-            ], 
-        axis=1)
-            
-
 class MomentsToImage(tf.keras.layers.Layer):
-    def __init__(self, output_dim, pretraining_mode=False, **kwargs):
+    def __init__(self, output_dim=(8,16), **kwargs):
         super(MomentsToImage, self).__init__()
         self.output_dim = output_dim
         self.max_dim = max(output_dim)
-        self.pretraining_mode = pretraining_mode
-        if self.pretraining_mode: print("PRETRAINING!")
 
     def get_config(self):
         config = super().get_config().copy()
         config.update({
             'moments_to_image_dim': self.output_dim,
-            'pretraining_mode': self.pretraining_mode 
         })
         return config
 
     def build(self, input_shape):
-        if not self.pretraining_mode:
-            self.grid_dim = self.output_dim[0]*self.output_dim[1]
-            self.grid = tf.constant([
-                [x,y] for x in range(self.output_dim[1]) for y in range(self.output_dim[0])
-            ], dtype=tf.float32)
+        self.grid_dim = self.output_dim[0]*self.output_dim[1]
+        self.grid = tf.constant([
+            [x,y] for x in range(self.output_dim[1]) for y in range(self.output_dim[0])
+        ], dtype=tf.float32)
         super(MomentsToImage, self).build(input_shape)
 
     def call(self, moments):
-        if self.pretraining_mode:
-            return moments
-
         sx, sy = self.output_dim[1]-1, self.output_dim[0]-1
-
         mu, ms, it = (
             tf.repeat(
                 tf.expand_dims(
@@ -105,53 +57,38 @@ class MomentsToImage(tf.keras.layers.Layer):
                 repeats=self.grid_dim
             )
         )
-        #ms = tf.stack([0.001 + 0.999*(1. + tf.tanh(ms[:,0])) / 2, tf.tanh(ms[:,1]), 0.001 + 0.999*(1. + tf.tanh(ms[:,2])) / 2], axis=1)
-        #ms = tf.stack([(ms[:,0])*3*sy, ms[:,1]*tf.sqrt((ms[:,0])*ms[:,2]*9*sx*sy), ms[:,2]*3*sx], axis=1)
-        #ms = tf.stack([(ms[:,0])*3*sy, ms[:,1]*tf.sqrt(9.*sx*sy), ms[:,2]*3*sx], axis=1)
-        #mu = tf.tanh(mu) * tf.constant([[sx/2, sy/2]], dtype=tf.float32) + tf.constant([[sx/2, sy/2]], dtype=tf.float32)
-        #it = 10**tf.nn.relu(it)
+        ms = tf.stack([0.03 + 0.97*(1. + tf.tanh(ms[:,0])) / 2, tf.tanh(ms[:,1]), 0.03 + 0.97*(1. + tf.tanh(ms[:,2])) / 2], axis=1)
+        # ms = tf.clip_by_value(ms, [[0.03, -0.999, 0.03]], [[1, 0.999, 1]])
+        ms = tf.stack([(ms[:,0])*3*sx, ms[:,1]*tf.sqrt((ms[:,0])*ms[:,2]*9*sx*sy), ms[:,2]*3*sy], axis=1)
+        mu = tf.tanh(mu) * tf.constant([[sx/2, sy/2]], dtype=tf.float32) + tf.constant([[sx/2, sy/2]], dtype=tf.float32)
+        it = 10*tf.sigmoid(it)
         covmat = tf.repeat(
             tf.expand_dims(
                 tf.gather(ms, [[0,1],[1,2]], axis=1),
             axis=1),
-            axis=1,
+            axis=1, 
             repeats=self.grid_dim
         )
         covmat_inv = tf.linalg.inv(covmat)
         covmat_det = tf.linalg.det(covmat)
-        dens = tf.squeeze(tf.math.exp((-1/2) * (tf.expand_dims((self.grid-mu),-2) @ covmat_inv @ tf.expand_dims((self.grid-mu),-1))))
         norm = it / tf.math.sqrt(covmat_det*((2*math.pi)**2))
-        dens = norm * dens
-        #n2 = 1 / tf.reduce_sum(dens, axis=(-1,-2))
-        return tf.transpose(tf.reshape(dens, (-1, self.output_dim[1], self.output_dim[0])), (0,2,1))
+        dens = tf.squeeze(tf.math.exp((-1/2) * (tf.expand_dims((self.grid-mu),-2) @ covmat_inv @ tf.expand_dims((self.grid-mu),-1))))
+        return tf.transpose(tf.reshape(norm*dens, (-1, self.output_dim[1], self.output_dim[0])), (0,2,1))
 
 
 class ImageToMoments(tf.keras.layers.Layer):
-    def __init__(self, pretraining_mode=False, **kwargs):
+    def __init__(self, **kwargs):
         super(ImageToMoments, self).__init__()
-        self.pretraining_mode = pretraining_mode
-        if self.pretraining_mode: print("PRETRAINING!")
 
     def build(self, input_shape):
-        if not self.pretraining_mode:
-            if len(input_shape) < 3:
-                self.input_dim = input_shape
-            else:
-                self.input_dim = input_shape[1:]
-            self.grid = [(i,j) for i in range(input_shape[1]) for j in range(input_shape[2])]
-        print("BUILDING", input_shape)
+        if len(input_shape) < 3:
+            self.input_dim = input_shape
+        else:
+            self.input_dim = input_shape[1:]
+        self.grid = [(i,j) for i in range(input_shape[1]) for j in range(input_shape[2])]
         super(ImageToMoments, self).build(input_shape)
 
-    def get_config(self):
-        config = super().get_config().copy()
-        config.update({
-            'pretraining_mode': self.pretraining_mode,
-        })
-        return config
-
     def call(self, image):
-        if self.pretraining_mode:
-            return image
         sy, sx = self.input_dim[0]-1, self.input_dim[1]-1
         iy = tf.constant([[g[0] for g in self.grid]], dtype=tf.float32)
         ix = tf.constant([[g[1] for g in self.grid]], dtype=tf.float32)
@@ -183,16 +120,16 @@ class ImageToMoments(tf.keras.layers.Layer):
             mean_x,
             mean_y,
             var_x,
-            cov_xy / (var_x * var_y),
+            cov_xy,
             var_y,
-            tf.math.log(it)/tf.math.log(tf.constant(10, dtype=tf.float32))
+            it
         ], axis=-1)
         
         return out 
 
 
 def moments_to_image_block(output_shape, name=None, pretraining_mode=False):
-    return tf.keras.Sequential([MomentActivation(output_shape), MomentsToImage(output_shape, pretraining_mode=pretraining_mode)])
+    return tf.keras.Sequential([MomentsToImage(output_shape, pretraining_mode=pretraining_mode)])
 
 def image_to_moments_block(features_shape, image_shape, axis, name=None, pretraining_mode=False):
     in1 = tf.keras.Input(shape=features_shape)
@@ -411,4 +348,14 @@ def build_architecture(block_descriptions, name=None, custom_objects_code=None):
         args['name'] = name
     return tf.keras.Model(**args)
 
-
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    inp = tf.constant([
+        [-0.286156327, 0.209562385, 0.05146236, 0, 0.05727632, 2.93366218],
+        [0, 0, 0.09, 1, 0.08, 100]
+    ], dtype=tf.float32)
+    mti = MomentsToImage((8, 16))
+    itm = ImageToMoments()
+    print(itm(mti(inp)))
+    plt.imshow(mti(inp)[1].numpy())
+    plt.show()

@@ -36,7 +36,7 @@ class WriteHistSummaryCallback:
                     tf.summary.image(k, img, step)
                 for k, img in images1.items():
                     tf.summary.image("{} (amp > 1)".format(k), img, step)
-                tf.summary.image("log10(amplitude + 1)", img_amplitude, step)
+                #tf.summary.image("log10(amplitude + 1)", img_amplitude, step)
 
 
 class ScheduleLRCallback:

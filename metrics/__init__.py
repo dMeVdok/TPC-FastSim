@@ -41,7 +41,6 @@ def make_metric_plots(images_real, images_gen, features=None, calc_chi2=False, m
     if calc_chi2:
         chi2 = 0
 
-    try:
         metric_real = get_val_metric_v(images_real)
         metric_gen  = get_val_metric_v(images_gen )
     
@@ -51,6 +50,8 @@ def make_metric_plots(images_real, images_gen, features=None, calc_chi2=False, m
                 pdffile = io.BytesIO()
                 pdf_plots[name] = pdffile
             plots[name] = make_histograms(real, gen, name, pdffile=pdffile)
+            if name == "Mean1":
+                print(min(gen), max(gen))
 
 
         if features is not None:
@@ -70,9 +71,6 @@ def make_metric_plots(images_real, images_gen, features=None, calc_chi2=False, m
                     else:
                         plots[name] = make_trend_plot(feature_real, real,
                                                       feature_gen, gen, name, pdffile=pdffile)
-
-    except AssertionError as e:
-        print(f"WARNING! Assertion error ({e})")
 
     result = {'plots' : plots}
     if calc_chi2:
@@ -140,8 +138,8 @@ def make_images_for_model(model,
     if make_pdfs:
         pdffile = io.BytesIO()
         pdf_outputs.append(pdffile)
-    img_amplitude = make_histograms(Y.flatten(), gen_scaled.flatten(), 'log10(amplitude + 1)', logy=True,
-                                    pdffile=pdffile)
+    #img_amplitude = make_histograms(Y.flatten(), gen_scaled.flatten(), 'log10(amplitude + 1)', logy=True,
+    #                                pdffile=pdffile)
 
     pdffile_examples = None
     pdffile_examples_mask = None
@@ -150,10 +148,10 @@ def make_images_for_model(model,
         pdffile_examples_mask = io.BytesIO()
         images_pdf['examples'] = pdffile_examples
         images_pdf['examples_mask'] = pdffile_examples_mask
-    images['examples'] = plot_individual_images(Y, gen_scaled, pdffile=pdffile_examples)
-    images['examples_mask'] = plot_images_mask(Y, gen_scaled, pdffile=pdffile_examples_mask)
+    images['examples'] = plot_individual_images(real, gen, pdffile=pdffile_examples)
+    #images['examples_mask'] = plot_images_mask(Y, gen_scaled, pdffile=pdffile_examples_mask)
 
-    result = [images, images1, img_amplitude]
+    result = [images, images1, None]
 
     if return_raw_data:
         result += [(gen_features, gen)]
@@ -174,13 +172,15 @@ def evaluate_model(model, path, sample, gen_sample_name=None):
                               calc_chi2=True, return_raw_data=True, gen_more=10, pdf_outputs=pdf_outputs)
     images_pdf, images1_pdf, img_amplitude_pdf = pdf_outputs
 
+
     array_to_img = lambda arr: PIL.Image.fromarray(arr.reshape(arr.shape[1:]))
 
-    for k, img in images.items():
-        array_to_img(img).save(str(path / f"{k}.png"))
-    for k, img in images1.items():
-        array_to_img(img).save(str(path / f"{k}_amp_gt_1.png"))
-    array_to_img(img_amplitude).save(str(path / "log10_amp_p_1.png"))
+    
+    #for k, img in images.items():
+    #    array_to_img(img).save(str(path / f"{k}.png"))
+    #for k, img in images1.items():
+    #    array_to_img(img).save(str(path / f"{k}_amp_gt_1.png"))
+    #array_to_img(img_amplitude).save(str(path / "log10_amp_p_1.png"))
 
     def buf_to_file(buf, filename):
         with open(filename, 'wb') as f:
@@ -243,6 +243,7 @@ def plot_individual_images(real, gen, n=10, pdffile=None):
 
 
 def plot_images_mask(real, gen, pdffile=None):
+    return False
     assert real.ndim == 3 == gen.ndim
     assert real.shape[1:] == gen.shape[1:]
 

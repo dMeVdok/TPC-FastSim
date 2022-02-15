@@ -9,8 +9,8 @@ gpdata_lambda: 0.
 cramer: False
 stochastic_stepping: True
 
-save_every: 100
-num_epochs: 1000
+save_every: 10
+num_epochs: 5000
 #num_epochs: 10000
 
 feature_noise_power: NULL
@@ -26,9 +26,7 @@ architecture:
         - block_type: 'fully_connected'
           arguments:
             units: [32, 64, 64, 64, 6]
-            activations: ['relu', 'relu', 'relu', 'relu', NULL]
-            #units: [32, 6]
-            #activations: ['relu', NULL]
+            activations: ['leaky_relu', 'leaky_relu', 'leaky_relu', 'leaky_relu', NULL]
             kernel_init: 'glorot_uniform'
             input_shape: [37,]
             output_shape: NULL
@@ -36,19 +34,21 @@ architecture:
         - block_type: 'moments_to_image'
           arguments:
             output_shape: [8, 16]
+            pretraining_mode: true
             name: 'moments_to_image'
 
     discriminator:
         - block_type: 'image_to_moments'
           arguments:
             features_shape: [5,]
-            image_shape: [8, 16]
+            image_shape: [6,] # [8, 16]
             axis: -1
+            pretraining_mode: true
             name: 'image_to_moments_concat_with_features'
         - block_type: 'fully_connected'
           arguments:
             units: [32, 64, 64, 64, 128, 1]
-            activations: ['relu', 'relu', 'relu', 'relu', 'relu', NULL]
+            activations: ['leaky_relu', 'leaky_relu', 'leaky_relu', 'leaky_relu', 'leaky_relu', NULL]
             #units: [32, 64, 1]
             #activations: ['relu', 'relu', NULL]
             kernel_init: 'glorot_uniform'
