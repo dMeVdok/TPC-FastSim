@@ -7,6 +7,7 @@ import tensorflow as tf
 from models.nn import MomentsToImage, ImageToMoments
 from data import preprocessing
 from tqdm import tqdm
+import sys
 
 preprocessing._VERSION = 'data_v4'
 data, features = preprocessing.read_csv_2d(pad_range=[-3,5], time_range=[-7,9])
@@ -61,10 +62,30 @@ for d in tqdm(data):
 
     rec_mom_scale_unscale = sc.scale(sc.unscale(sc.scale(img)))[0]
 
-    marg_x_d.append(np.sum(img[0], 0))
-    marg_y_d.append(np.sum(img[0], 1))
-    marg_x_su.append(np.sum(sc.unscale(sc.scale(img))[0], 0))
-    marg_y_su.append(np.sum(sc.unscale(sc.scale(img))[0], 1))
+    if (rec_mom_scaler[0] >= float(sys.argv[1])) and (rec_mom_scaler[0] <= float(sys.argv[2])):
+        if (rec_mom_scaler[1] >= float(sys.argv[3])) and (rec_mom_scaler[1] <= float(sys.argv[4])):
+            b = []
+            z = np.log(np.average(img[0], 0))
+            for x in z:
+                b.append(x)
+            marg_x_d.append(b)
+            b = []
+            z = np.log(np.average(sc.unscale(sc.scale(img))[0], 0))
+            for x in z:
+                b.append(x)        
+            marg_x_su.append(b)
+
+            b = []
+            z = np.log(np.average(img[0], 1))
+            for x in z:
+                b.append(x)
+            marg_y_d.append(b)
+            b = []
+            z = np.log(np.average(sc.unscale(sc.scale(img))[0], 1))
+            for x in z:
+                b.append(x)        
+            marg_y_su.append(b)
+
 
     if (rec_mom_scaler[0] < 5.5) or (rec_mom_scaler[0] > 9.5) or (rec_mom_scaler[1] < 2.75) or (rec_mom_scaler[1] > 4.25):
         plt.imshow(img[0])
@@ -132,11 +153,23 @@ def qv(x, y, u, v, bins=10):
                 pass
     return xn, yn, un, vn
 
-print(np.array(marg_x_d).shape)
+print(np.array(marg_x_d).T.shape)
+print(np.array(marg_x_su).T.shape)
 
-plt.bar(list(range(len(marg_x_d[488]))), marg_x_d[488], fill=False, edgecolor="green", label="Data")
-plt.bar(list(range(len(marg_x_su[488]))), marg_x_su[488], fill=False, edgecolor="red", label="Unscale(Scale(Data))")
-plt.legend()
+
+violin_parts = plt.violinplot(np.array(marg_x_d), widths=2,
+                   showmeans=False, showmedians=False, showextrema=False)
+
+for pc in violin_parts['bodies']:
+    pc.set_facecolor('green')
+
+violin_parts = plt.violinplot(np.array(marg_x_su), widths=2,
+                   showmeans=False, showmedians=False, showextrema=False)
+
+for pc in violin_parts['bodies']:
+    pc.set_facecolor('red')
+
+plt.ylabel("log(average_pixel_x)")
 
 plt.savefig("marginal_x.png")
 

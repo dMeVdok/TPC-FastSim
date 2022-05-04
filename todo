@@ -1,0 +1,20 @@
+1) make_fake_unact function is ok [should be only for pretraining models]
+2) make_images_for_model sample should be a tuple (X, Y, Y_unact)
+3) test: try baseline with monitoring
+
+
+30 MAR 
+
+Plot the dependency of min chi^2 of scale
+
+Try without activations. 
+Turn off relu from the integral
+Check the integral on pretraining -> training
+
+https://www.tensorflow.org/api_docs/python/tf/debugging/enable_check_numerics
+https://www.tensorflow.org/tensorboard/debugger_v2
+
+
+Q
+
+важно ли, чтобы латентные фичи совпадали?

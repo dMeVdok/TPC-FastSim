@@ -1,3 +1,4 @@
+from re import M
 import six
 import tensorflow as tf
 import numpy as np
@@ -18,14 +19,16 @@ def get_activation(activation):
 
 class MomentActivation(tf.keras.layers.Layer):
     
-    def __init__(self, output_shape):
+    def __init__(self, output_shape, activation):
         super(MomentActivation, self).__init__()
         self.output_dim = output_shape
+        self.activation = eval(activation)
 
     def get_config(self):
         config = super().get_config().copy()
         config.update({
             'moments_to_image_dim': self.output_dim,
+            'activation': self.activation
         })
         return config
 
@@ -39,11 +42,29 @@ class MomentActivation(tf.keras.layers.Layer):
             moments[:,2:-1],
             moments[:,-1],
         )
-        ms = tf.stack([0.001 + 0.999*(1. + tf.tanh(ms[:,0])) / 2, tf.tanh(ms[:,1]), 0.001 + 0.999*(1. + tf.tanh(ms[:,2])) / 2], axis=1)
-        ms = tf.stack([(ms[:,0])*3*2, ms[:,1]*tf.sqrt(ms[:,0]*ms[:,2]*9*sx*sy), ms[:,2]*3*2], axis=1)
-        mu = tf.tanh(mu) * tf.constant([[sx/2, sy/2]], dtype=tf.float32) + tf.constant([[sx/2, sy/2]], dtype=tf.float32)
-        
-        it = tf.nn.relu(it)
+        mu, ms, it = self.activation(mu, ms, it)
+        """
+        if self.activation_type[:5] == "tanh_":
+            sigma_scale = float(self.activation_type.split("_")[1])
+            ms = tf.stack([0.001 + 0.999*(1. + tf.tanh(ms[:,0])) / 2, tf.tanh(ms[:,1]), 0.001 + 0.999*(1. + tf.tanh(ms[:,2])) / 2], axis=1)
+            ms = tf.stack([(ms[:,0])*sigma_scale, ms[:,1]*tf.sqrt(ms[:,0]*ms[:,2]*(sigma_scale)), ms[:,2]], axis=1)
+            mu = tf.tanh(mu) * tf.constant([[sy/2, sx/2]], dtype=tf.float32) + tf.constant([[sy/2, sx/2]], dtype=tf.float32)
+            it = tf.nn.relu(it)
+        if self.activation_type[:7] == "tanh^2_":
+            sigma_scale = float(self.activation_type.split("_")[1])
+            ms = tf.stack([0.001 + 0.999*(1. + tf.tanh(ms[:,0])**2) / 2, tf.tanh(ms[:,1]), 0.001 + 0.999*(1. + tf.tanh(ms[:,2])**2) / 2], axis=1)
+            ms = tf.stack([(ms[:,0])*sigma_scale, ms[:,1]*tf.sqrt(ms[:,0]*ms[:,2]*(sigma_scale*6)), ms[:,2]*6], axis=1)
+            mu = tf.tanh(mu) * tf.constant([[sy/2, sx/2]], dtype=tf.float32) + tf.constant([[sy/2, sx/2]], dtype=tf.float32)
+            it = tf.nn.relu(it)
+        if self.activation_type[:5] == "none":
+            pass
+        if self.activation_type[:9] == "softplus_":
+            sigma_scale = float(self.activation_type.split("_")[1])
+            ms = tf.stack([tf.math.softplus(ms[:,0] / sigma_scale)**2 / 2, tf.tanh(ms[:,1]), tf.math.softplus(ms[:,2] / sigma_scale)**2 / 2], axis=1)
+            ms = tf.stack([(ms[:,0]), ms[:,1]*tf.sqrt(ms[:,0]*ms[:,2]), (ms[:,2])], axis=1)
+            mu = tf.tanh(mu) * tf.constant([[sy/2, sx/2]], dtype=tf.float32) + tf.constant([[sy/2, sx/2]], dtype=tf.float32)
+            it = tf.nn.relu(it)
+        """
         return tf.stack(
             [
                 mu[:, 0],
@@ -54,6 +75,7 @@ class MomentActivation(tf.keras.layers.Layer):
                 it
             ], 
         axis=1)
+        
             
 
 class MomentsToImage(tf.keras.layers.Layer):
@@ -68,7 +90,7 @@ class MomentsToImage(tf.keras.layers.Layer):
         config = super().get_config().copy()
         config.update({
             'moments_to_image_dim': self.output_dim,
-            'pretraining_mode': self.pretraining_mode 
+            'pretraining_mode': self.pretraining_mode,
         })
         return config
 
@@ -145,7 +167,7 @@ class ImageToMoments(tf.keras.layers.Layer):
     def get_config(self):
         config = super().get_config().copy()
         config.update({
-            'pretraining_mode': self.pretraining_mode,
+            'pretraining_mode': self.pretraining_mode
         })
         return config
 
@@ -183,7 +205,7 @@ class ImageToMoments(tf.keras.layers.Layer):
             mean_x,
             mean_y,
             var_x,
-            cov_xy / (var_x * var_y),
+            cov_xy, #/ (var_x * var_y),
             var_y,
             tf.math.log(it)/tf.math.log(tf.constant(10, dtype=tf.float32))
         ], axis=-1)
@@ -191,8 +213,8 @@ class ImageToMoments(tf.keras.layers.Layer):
         return out 
 
 
-def moments_to_image_block(output_shape, name=None, pretraining_mode=False):
-    return tf.keras.Sequential([MomentActivation(output_shape), MomentsToImage(output_shape, pretraining_mode=pretraining_mode)])
+def moments_to_image_block(output_shape, name=None, activation=lambda a,b,c: (a,b,c), pretraining_mode=False):
+    return tf.keras.Sequential([MomentActivation(output_shape, activation=activation), MomentsToImage(output_shape, pretraining_mode=pretraining_mode)])
 
 def image_to_moments_block(features_shape, image_shape, axis, name=None, pretraining_mode=False):
     in1 = tf.keras.Input(shape=features_shape)

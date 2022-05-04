@@ -92,6 +92,7 @@ class Model_v4:
         self.generator.compile(optimizer=self.gen_opt, loss='mean_squared_error')
         self.discriminator.compile(optimizer=self.disc_opt, loss='mean_squared_error')
 
+
     def load_generator(self, checkpoint):
         self._load_weights(checkpoint, 'gen')
 
@@ -134,6 +135,21 @@ class Model_v4:
         return self.generator(
             tf.concat([_f(features), latent_input], axis=-1)
         )
+
+    
+    def make_fake_unact(self, features):
+        size = tf.shape(features)[0]
+        latent_input = tf.random.normal(shape=(size, self.latent_dim), dtype='float32')
+        return self.generator.get_layer("generator")(
+            tf.concat([_f(features), latent_input], axis=-1)
+        )
+
+    def activate(self, name):
+        _METRIC_NAMES = ['Mean0', 'Mean1', 'Sigma0^2', 'Cov01', 'Sigma1^2', 'Sum']
+        metric_index = _METRIC_NAMES.index(name)
+        return lambda x: (self.generator.get_layer("sequential")(
+            tf.constant([[0 if i!=metric_index else x for i in range(len(_METRIC_NAMES))]]))
+        )[0][metric_index]
 
     def gradient_penalty(self, features, real, fake):
         alpha = tf.random.uniform(shape=[len(real),] + [1] * (len(real.shape) - 1))

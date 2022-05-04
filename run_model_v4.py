@@ -60,6 +60,9 @@ def load_config(file):
 
 
 def main():
+    tf.random.set_seed(0)
+    np.random.seed(0)
+
     args = parse_args()
 
     cuda_gpu_config.setup_gpu(args.gpu_num)
@@ -126,7 +129,6 @@ def main():
                 current_power = config['feature_noise_power'] / (10**(epoch / config['feature_noise_decay']))
                 with writer_train.as_default():
                     tf.summary.scalar("features noise power", current_power, epoch)
-
                 return current_power
 
 

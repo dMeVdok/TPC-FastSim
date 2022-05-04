@@ -19,7 +19,8 @@ def make_histograms(data_real, data_gen, title, figsize=(8, 8), n_bins=100, logy
     
     fig = plt.figure(figsize=figsize)
     plt.hist(data_real, bins=bins, density=True, label='real')
-    plt.hist(data_gen , bins=bins, density=True, label='generated', alpha=0.7)
+    plt.hist(data_gen, bins=bins, density=True, label='generated', alpha=0.7)
+
     if logy:
         plt.yscale('log')
     plt.legend()
@@ -35,28 +36,61 @@ def make_histograms(data_real, data_gen, title, figsize=(8, 8), n_bins=100, logy
     return np.array(img.getdata(), dtype=np.uint8).reshape(1, img.size[1], img.size[0], -1)
 
 
-def make_metric_plots(images_real, images_gen, features=None, calc_chi2=False, make_pdfs=False):
+def make_act_histograms(data_gen_unact, data_gen, data_real, activation, title, figsize=(8, 8), n_bins=100, logy=False, pdffile=None):
+    l = min(-1, data_gen_unact.min())
+    r = max(1, data_gen_unact.max())
+    bins = np.linspace(l, r, n_bins + 1)
+    bins_act = np.linspace(l, r, n_bins*10 + 10)
+    
+    fig = plt.figure(figsize=figsize)
+    plt.hist(data_gen_unact, bins=bins, density=True, color="black", label='generated, raw')
+    plt.hist(data_gen, density=True, bins=n_bins, alpha=0.8, label='generated, activated', color="tab:orange", orientation='horizontal')
+    plt.hist(data_real, density=True, bins=n_bins, alpha=0.8, label='real', color="tab:blue", orientation='horizontal')
+    plt.plot(bins_act, list(map(activation, bins_act)), c="red", label="activation")
+    plt.legend()
+
+    if logy:
+        plt.yscale('log')
+    plt.legend()
+    plt.title(title)
+    
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png')
+    if pdffile is not None: fig.savefig(pdffile, format='pdf')
+    plt.close(fig)
+    buf.seek(0)
+    
+    img = PIL.Image.open(buf)
+    return np.array(img.getdata(), dtype=np.uint8).reshape(1, img.size[1], img.size[0], -1)
+
+def make_metric_plots(images_real, images_gen, features=None, calc_chi2=False, make_pdfs=False, gen_unact=None, gen_act=None, model=None):
     plots = {}
     if make_pdfs: pdf_plots = {}
     if calc_chi2:
-        chi2 = 0
+        chi2 = np.zeros((6,))
+        chi2_dist = np.zeros((6,))
 
         metric_real = get_val_metric_v(images_real)
-        metric_gen  = get_val_metric_v(images_gen )
-    
-        for name, real, gen in zip(_METRIC_NAMES, metric_real.T, metric_gen.T):
-            pdffile = None
+        metric_gen  = get_val_metric_v(images_gen)
+
+        for name, gen, gen_scaled, real in zip(_METRIC_NAMES, gen_unact.T, gen_act.T, metric_real.T):
+            activation = lambda x: model.activate(name)(x)
+            pdffile, pdffile2 = None, None
             if make_pdfs:
-                pdffile = io.BytesIO()
-                pdf_plots[name] = pdffile
-            plots[name] = make_histograms(real, gen, name, pdffile=pdffile)
-            if name == "Mean1":
-                print(min(gen), max(gen))
+                pdffile, pdffile2 = io.BytesIO(), io.BytesIO()
+                pdf_plots[name + "_act"] = pdffile
+                pdf_plots[name] = pdffile2
+            if name == "Sum":
+                gen_scaled = 10**gen_scaled
+            plots[name] = make_histograms(real, gen_scaled, name, pdffile=pdffile2)
+            plots[name + "_act"] = make_act_histograms(gen, gen_scaled, real, activation, name, pdffile=pdffile)
 
 
         if features is not None:
             for feature_name, (feature_real, feature_gen) in features.items():
-                for metric_name, real, gen in zip(_METRIC_NAMES, metric_real.T, metric_gen.T):
+                for i, metric_name, real, gen, gen_scaled in zip(range(len(_METRIC_NAMES)), _METRIC_NAMES, metric_real.T, gen_act.T, metric_gen.T):
+                    if metric_name == "Sum":
+                        gen = 10**gen
                     name = f'{metric_name} vs {feature_name}'
                     pdffile = None
                     if make_pdfs:
@@ -67,7 +101,12 @@ def make_metric_plots(images_real, images_gen, features=None, calc_chi2=False, m
                                                               feature_gen, gen,
                                                               name, calc_chi2=True,
                                                               pdffile=pdffile)
-                        chi2 += chi2_i
+                        chi2[i] += chi2_i
+                        _, chi2_i = make_trend_plot(feature_real, real,
+                                                              feature_gen, gen_scaled,
+                                                              name, calc_chi2=True,
+                                                              pdffile=pdffile)
+                        chi2_dist[i] += chi2_i
                     else:
                         plots[name] = make_trend_plot(feature_real, real,
                                                       feature_gen, gen, name, pdffile=pdffile)
@@ -75,6 +114,7 @@ def make_metric_plots(images_real, images_gen, features=None, calc_chi2=False, m
     result = {'plots' : plots}
     if calc_chi2:
         result['chi2'] = chi2
+        result['chi2_dist'] = chi2_dist
     if make_pdfs:
         result['pdf_plots'] = pdf_plots
 
@@ -103,10 +143,16 @@ def make_images_for_model(model,
             X,
             [gen_more] + [1] * (X.ndim - 1)
         )
+    
     gen_scaled = np.concatenate([
         model.make_fake(gen_features[i:i+batch_size]).numpy()
         for i in range(0, len(gen_features), batch_size)
     ], axis=0)
+    gen_scaled_unact = np.concatenate([
+        model.make_fake_unact(gen_features[i:i+batch_size]).numpy()
+        for i in range(0, len(gen_features), batch_size)
+    ], axis=0)
+
     real = model.scaler.unscale(Y)
     gen = model.scaler.unscale(gen_scaled)
     gen[gen < 0] = 0
@@ -121,10 +167,13 @@ def make_images_for_model(model,
     }
 
     metric_plot_results = make_metric_plots(real, gen, features=features,
-                                            calc_chi2=calc_chi2, make_pdfs=make_pdfs)
+                                            calc_chi2=calc_chi2, make_pdfs=make_pdfs, gen_unact=gen_scaled_unact, gen_act=gen_scaled, model=model)
+
+    
     images = metric_plot_results['plots']
     if calc_chi2:
         chi2 = metric_plot_results['chi2']
+        chi2_dist = metric_plot_results['chi2_dist']
     if make_pdfs:
         images_pdf = metric_plot_results['pdf_plots']
         pdf_outputs.append(images_pdf)
@@ -158,6 +207,7 @@ def make_images_for_model(model,
 
     if calc_chi2:
         result += [chi2]
+        result += [chi2_dist]
 
     return result
 

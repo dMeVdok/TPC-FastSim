@@ -27,7 +27,7 @@ class Gaussian:
         result = gaussian_fit(x)
         result[:,-1] = np.log(result[:,-1]) / np.log(10)
         # result[:,3] /= (result[:,2] * result[:,4])
-        return np.stack([result[:,1], result[:,0], result[:,4], result[:,3], result[:,2], result[:,5]], axis=1)
+        return np.stack([result[:,0], result[:,1], result[:,2], result[:,3], result[:,4], result[:,5]], axis=1)
 
     def unscale(self, x, use_activations=False):
 
@@ -53,7 +53,7 @@ class Gaussian:
                 ], 
             axis=1)
 
-        m1, m0, D11, D01, D00, logA = x.T
+        m0, m1, D00, D01, D11, logA = x.T
         D00 = np.clip(D00, 0.05, None)
         D11 = np.clip(D11, 0.05, None)
         
@@ -75,6 +75,7 @@ class Gaussian:
         xx0, xx1 = np.meshgrid(xx0, xx1, indexing='ij')
         xx = np.stack([xx0, xx1], axis=2)
         residuals = xx[None,...] - mu[:,None,None,:] # N x H x W x 2
+
 
         result = np.exp(-0.5 *
             np.einsum('ijkl,ilm,ijkm->ijk', residuals, invcov, residuals)

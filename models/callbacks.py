@@ -26,11 +26,13 @@ class WriteHistSummaryCallback:
 
     def __call__(self, step):
         if step % self.save_period == 0:
-            images, images1, img_amplitude, chi2 = make_images_for_model(self.model,
+            images, images1, img_amplitude, chi2, chi2_dist = make_images_for_model(self.model,
                                                                          sample=self.sample,
                                                                          calc_chi2=True)
             with self.writer.as_default():
-                tf.summary.scalar("chi2", chi2, step)
+                tf.summary.scalar("chi2", sum(chi2), step)
+                tf.summary.scalar("chi2 with distortions", sum(chi2_dist), step)
+                tf.summary.text("chi2_summary", "chi2-chi2_dist = [" + ' '.join([str(chi2[i]-chi2_dist[i]) for i in range(len(chi2))]) + "]", step=0)
 
                 for k, img in images.items():
                     tf.summary.image(k, img, step)
